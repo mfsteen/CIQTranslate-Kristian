@@ -16,6 +16,7 @@ from tokenizer import shunting_yard
 
 #import apihelper
 
+import stopwatch
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -23,7 +24,7 @@ warnings.filterwarnings("ignore")
 
 if sys.version_info < (3,):
   def is_string(s):
-    return type(s) in [str,unicode]
+    return type(s) in [str, unicode]
 else:
   def is_string(s):
     return type(s) == str
@@ -33,16 +34,18 @@ else:
 class ExcelLoader:
   def __init__(self, filename):
     self.workbook_normal = openpyxl.load_workbook(filename, data_only=False)
-    self.workbook_data = openpyxl.load_workbook(filename, data_only=True)
+    #self.workbook_data = openpyxl.load_workbook(filename, data_only=True)
 
   def iter_rows(self, sheet_name, data_only=True):
-    wb = data_only and self.workbook_data or self.workbook_normal
+    #wb = data_only and self.workbook_data or self.workbook_normal
+    wb = self.workbook_normal
     sheet = wb[sheet_name]
     return sheet.iter_rows()
 
   def iter_icells(self, sheet_name, data_only=True):
     """Return generator for all cells with offsets prepended"""
-    wb = data_only and self.workbook_data or self.workbook_normal
+    #wb = data_only and self.workbook_data or self.workbook_normal
+    wb = self.workbook_normal
     sheet = wb[sheet_name]
 
     for i, row in enumerate(sheet.iter_rows()):
@@ -128,7 +131,7 @@ class SheetModel(QStandardItemModel):
 
     self.blocks = []
 
-    for row in self.excel_loader.iter_rows(sheet_name):
+    for row in self.excel_loader.iter_rows(sheet_name, data_only=False):
       row_items = []
       for cell in row:
 
@@ -141,6 +144,8 @@ class SheetModel(QStandardItemModel):
           text = ''
 
         item = QStandardItem(text)
+
+
         item.setData(cell.value, CellData.Data)
         item.setData(CellBorder.NoBorder, CellData.Border)
         item.setData(
@@ -148,14 +153,13 @@ class SheetModel(QStandardItemModel):
           CellData.Category
         )
 
+        if cell.formula:
+          item.setData(cell.formula, CellData.Expression)
+
         row_items.append(item)
 
       self.appendRow(row_items)
 
-    for icell in self.excel_loader.iter_icells(sheet_name, data_only=False):
-      x,y, cell = icell
-      self.item(x,y).setData(cell.value, CellData.Expression)
-      self.item(x,y).setData(cell.coordinate, CellData.Coordinate)
 
   def calculate_references(self):
     """Return dict (sheet_name -> cell references to that sheet)"""
@@ -296,6 +300,7 @@ class SheetModel(QStandardItemModel):
 class WorkbookModel:
   def load_file(self, filename):
     self.excel_loader = ExcelLoader(filename)
+
     sheet_names = self.excel_loader.sheet_names()
     self.sheet_models = {}
 
@@ -338,7 +343,6 @@ class ItemDelegate(QStyledItemDelegate):
     color = index.data(Qt.BackgroundRole).getHsv()
     brightness = color[0] >= 0 and 255 or 100
     color = QColor.fromHsv(color[0], 255, brightness)
-
 
     pen = QPen()
     pen.setColor(color)
@@ -514,9 +518,10 @@ class MainWindow(QMainWindow):
     widget.setLayout(vbox)
     self.setCentralWidget(widget)
 
-  def status_message(self, msg):
+  def status_message(self, msg, timeout=4000):
     self.statusLabel.setText(msg)
-    QTimer.singleShot(4000, lambda: self.statusLabel.setText(''))
+    if timeout:
+      QTimer.singleShot(timeout, lambda: self.statusLabel.setText(''))
 
   def update_cellinfo(self, row, column):
     if -1 in [row, column]:
@@ -543,7 +548,7 @@ class MainWindow(QMainWindow):
     self.table.setModel(self.workbook_model.current_sheet_model())
 
   def load_workbook(self, filename):
-    self.status_message('Loading file \'{0}\'...'.format(filename))
+    self.status_message('Loading file \'{0}\'...'.format(filename), timeout=0)
     QApplication.processEvents()
     self.workbook_model.load_file(filename)
     self.update_tabbar()
@@ -580,8 +585,13 @@ if __name__ == '__main__':
   w.resize(1200,800)
   w.setWindowIcon(QIcon('pics/icon.png'))
 
+  t = stopwatch.Timer()
+
   if len(sys.argv) == 2:
     w.load_workbook(sys.argv[1])
+
+  t.stop()
+  print(t.elapsed)
 
   w.show()
   app.exec_()

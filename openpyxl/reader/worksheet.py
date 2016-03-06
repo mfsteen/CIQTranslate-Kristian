@@ -117,13 +117,15 @@ class WorkSheetParser(object):
         coordinate = element.get('r')
         style_id = element.get('s')
 
+        formula_value = None
+
         # assign formula to cell value unless only the data is desired
         if formula is not None and not self.data_only:
             data_type = 'f'
             if formula.text:
-                value = "=" + formula.text
+                formula_value = "=" + formula.text
             else:
-                value = "="
+                formula_value = "="
             formula_type = formula.get('t')
             if formula_type:
                 if formula_type != "shared":
@@ -169,9 +171,9 @@ class WorkSheetParser(object):
                     # with such contradictions.
                     if si in self.shared_formula_masters:
                         trans = self.shared_formula_masters[si]
-                        value = trans.translate_formula(coordinate)
+                        formula_value = trans.translate_formula(coordinate)
                     else:
-                        self.shared_formula_masters[si] = Translator(value, coordinate)
+                        self.shared_formula_masters[si] = Translator(formula_value, coordinate)
 
 
         style_array = None
@@ -182,6 +184,8 @@ class WorkSheetParser(object):
         row, column = coordinate_to_tuple(coordinate)
         cell = Cell(self.ws, row=row, col_idx=column, style_array=style_array)
         self.ws._cells[(row, column)] = cell
+
+        cell.formula = formula_value
 
         if value is not None:
             if data_type == 'n':

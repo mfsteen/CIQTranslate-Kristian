@@ -85,6 +85,7 @@ class Cell(StyleableObject):
         'parent',
         '_hyperlink',
         '_comment',
+        'formula'
                  )
 
     ERROR_CODES = ERROR_CODES
@@ -115,6 +116,7 @@ class Cell(StyleableObject):
         if column is not None:
             col_idx = column_index_from_string(column)
         self.col_idx = col_idx
+        self.formula = None
 
 
     @property
