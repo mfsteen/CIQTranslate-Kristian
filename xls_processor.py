@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import os
 import sys
@@ -473,6 +473,10 @@ class MainWindow(QMainWindow):
     openFileAction.triggered.connect(self.open_file)
     toolbar.addAction(openFileAction)
 
+    exportAction = QAction(QIcon('pics/export.png'), '&Export', self)
+    exportAction.triggered.connect(self.export)
+    toolbar.addAction(exportAction)
+
    # toolbar.addSeparator()
 
    # pushmodeAction = QAction(QIcon('pics/push2.png'), 'P&ush Mode', self)
@@ -491,6 +495,7 @@ class MainWindow(QMainWindow):
     menubar = self.menuBar()
     fileMenu = menubar.addMenu('&File')
     fileMenu.addAction(openFileAction)
+    fileMenu.addAction(exportAction)
     fileMenu.addSeparator()
     fileMenu.addAction(exitAction)
 
@@ -517,6 +522,9 @@ class MainWindow(QMainWindow):
     widget = QWidget()
     widget.setLayout(vbox)
     self.setCentralWidget(widget)
+
+  def export(self):
+    pass
 
   def status_message(self, msg, timeout=4000):
     self.statusLabel.setText(msg)
