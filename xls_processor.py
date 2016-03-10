@@ -3,6 +3,7 @@
 import os
 import sys
 import re
+import csv
 
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -87,6 +88,7 @@ class ExcelFormula:
 
 
 
+
 class CellData:
   Data = Qt.UserRole+1
   Expression = Qt.UserRole+2
@@ -101,6 +103,8 @@ class CellCategory:
   Output = 3
   Intermediate = 4
   Ignored = 5
+
+  Any = 6
 
   @classmethod
   def desc(self, category):
@@ -121,6 +125,74 @@ class CellBorder:
   Bottom = 8
   All = Top | Left | Right | Bottom
 
+class Direction:
+  Left = 0
+  Right = 1
+  Top = 2
+  Bottom = 3
+
+
+class Block:
+  def __init__(self, top_left=(0,0), bottom_right=(0,0), type_=CellCategory.Label):
+    self.top_left = top_left
+    self.bottom_right = bottom_right
+    self.type_ = type_
+
+  def dimensions(self):
+    (ax, ay), (bx, by) = self.top_left, self.bottom_right
+    return (bx-ax, by-ay)
+
+  def width(self):
+    return self.dimensions()[0]
+
+  def height(self):
+    return self.dimensions()[1]
+
+
+class Blocks:
+  def __init__(self):
+    self.blocks = []
+
+  def clear(self):
+    del self.blocks[:]
+
+  def add_block(self, block):
+    self.blocks.append(block)
+
+  def indices(self):
+    return self.blocks
+
+  def data_blocks(self):
+    for  block in self.blocks:
+      if block.type_ in [CellCategory.Input, CellCategory.Output, CellCategory.Intermediate]:
+        yield block
+
+  def next_block(self, block, direction, dimensions, type_=CellCategory.Any):
+    pass
+
+  def export(self, filename):
+    for block in self.data_blocks():
+      label_block = self.next_block(
+        block, Direction.Left, (1, block.height()), CellCategory.Label
+      )
+      index_block = self.next_block(
+        block, Direction.Top, (block.width(), 0), CellCategory.Label
+      )
+  
+      if not (label_block and index_block):
+        continue
+
+      title_block = self.next_block(
+        block, Direction.Top, (1,1),  CellCategory.Label
+      )                              
+
+      print('{0}; {1}; {2}'.format(title_block, label_block, index_block))
+  
+    #with open(filename, 'w', newline='') as f:
+    #  a = csv.writer(f, delimeter=',')
+    #  a.writerows([3,10])
+
+
 
 class SheetModel(QStandardItemModel):
   def __init__(self, sheet_name, excel_loader, parent=None):
@@ -129,7 +201,7 @@ class SheetModel(QStandardItemModel):
     self.excel_loader = excel_loader
     self.sheet_name = sheet_name
 
-    self.blocks = []
+    self.blocks = Blocks()
 
     for row in self.excel_loader.iter_rows(sheet_name, data_only=False):
       row_items = []
@@ -144,7 +216,6 @@ class SheetModel(QStandardItemModel):
           text = ''
 
         item = QStandardItem(text)
-
 
         item.setData(cell.value, CellData.Data)
         item.setData(CellBorder.NoBorder, CellData.Border)
@@ -211,7 +282,9 @@ class SheetModel(QStandardItemModel):
           self.setData(index, CellCategory.Input, CellData.Category)
 
   def update(self):
-    self.blocks = list(self.scan_blocks())
+    #self.blocks = list(self.scan_blocks())
+    self.blocks.clear()
+    [self.blocks.add_block(b) for b in self.scan_blocks()]
 
   def scan_blocks(self):
     def row_sections(row):
@@ -259,7 +332,9 @@ class SheetModel(QStandardItemModel):
 
           k += 1
           blacklist[sec] = k
-        yield (i, sec[0], k, sec[1])
+
+        cat = self.data(self.index(i, sec[0]), CellData.Category)
+        yield Block((i, sec[0]), (k, sec[1]), cat)
 
 
   def data(self, index, role):
@@ -281,7 +356,8 @@ class SheetModel(QStandardItemModel):
       border = CellBorder.NoBorder
       x,y = index.row(), index.column()
 
-      for (ax, ay, bx, by) in self.blocks:
+      for block in self.blocks.indices():
+        (ax, ay), (bx, by) = block.top_left, block.bottom_right
         if x>=ax and x<=bx:
           if y==ay:
             border |= CellBorder.Left   
@@ -524,7 +600,7 @@ class MainWindow(QMainWindow):
     self.setCentralWidget(widget)
 
   def export(self):
-    pass
+    self.table.model().blocks.export('out.hd5')
 
   def status_message(self, msg, timeout=4000):
     self.statusLabel.setText(msg)
