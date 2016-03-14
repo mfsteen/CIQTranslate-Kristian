@@ -4,6 +4,7 @@ import os
 import sys
 import re
 import csv
+import math
 
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -11,6 +12,9 @@ from PyQt5.QtCore import *
 
 import openpyxl
 from tokenizer import shunting_yard
+
+import random
+import string
 
 #import h5py
 #import numpy as np
@@ -30,6 +34,16 @@ else:
   def is_string(s):
     return type(s) == str
 
+
+def randomword(length):
+  return ''.join(random.choice(string.ascii_lowercase) for i in range(length))
+
+
+def slugify(value):
+  import unicodedata
+  value = unicodedata.normalize('NFKD', value)
+  value = re.sub('[^\w\s-]', '', value).strip().lower()
+  return re.sub('[-\s]+', '-', value)
 
 
 class ExcelLoader:
@@ -86,9 +100,6 @@ class ExcelFormula:
     return (row-1,col-1)
 
 
-
-
-
 class CellData:
   Data = Qt.UserRole+1
   Expression = Qt.UserRole+2
@@ -133,19 +144,31 @@ class Direction:
 
 
 class Block:
-  def __init__(self, top_left=(0,0), bottom_right=(0,0), type_=CellCategory.Label):
+  def __init__(self, model, top_left=(0,0), bottom_right=(0,0), type_=CellCategory.Label):
     self.top_left = top_left
     self.bottom_right = bottom_right
     self.type_ = type_
+    self.model = model
+
+    #print('{0}: {1}'.format(self.top_left, self.get_data(*self.top_left)))
+
+  def get_data(self, row, column):
+    return self.model.index(row + self.top_left[0], column + self.top_left[1]).data(CellData.Data)
 
   def dimensions(self):
     (ax, ay), (bx, by) = self.top_left, self.bottom_right
-    return (bx-ax, by-ay)
+    return (bx-ax+1, by-ay+1)
 
-  def width(self):
+  def row(self):
+    return self.top_left[0]
+
+  def column(self):
+    return self.top_left[1]
+
+  def row_count(self):
     return self.dimensions()[0]
 
-  def height(self):
+  def column_count(self):
     return self.dimensions()[1]
 
 
@@ -167,31 +190,91 @@ class Blocks:
       if block.type_ in [CellCategory.Input, CellCategory.Output, CellCategory.Intermediate]:
         yield block
 
-  def next_block(self, block, direction, dimensions, type_=CellCategory.Any):
-    pass
+  def next_block(self, block, direction, position=(-1,-1), dimensions=(0,0), type_=CellCategory.Any):
+    matching_blocks = []
+
+    for bl in self.blocks:
+      if type_ != CellCategory.Any and bl.type_ != type_:
+        continue
+
+      if (dimensions[0] != 0 and dimensions[0] != bl.row_count()) or \
+        (dimensions[1] != 0 and dimensions[1] != bl.column_count()):
+        continue
+
+      if (position[0] != -1 and position[0] != bl.row()) or \
+        (position[1] != -1 and position[1] != bl.column()):
+        continue
+
+      if (direction == Direction.Top and block.row() <= bl.row()) or \
+        (direction == Direction.Bottom and block.row() >= bl.row()) or \
+        (direction == Direction.Left and block.column() <= bl.column()) or \
+        (direction == Direction.Right and block.column() >= bl.column()):
+        continue
+
+      row_d, col_d = abs(block.row()-bl.row()), abs(block.column()-bl.column())
+      distance = math.sqrt(pow(row_d, 2) + pow(col_d, 2))
+      matching_blocks.append((distance, bl))
+
+    sorted_blocks = sorted(matching_blocks, key=lambda x: x[0])
+
+    if sorted_blocks:
+      return sorted_blocks[0][1]
+    else:
+      return None
+
 
   def export(self, filename):
     for block in self.data_blocks():
       label_block = self.next_block(
-        block, Direction.Left, (1, block.height()), CellCategory.Label
+        block, Direction.Left, (-1, -1), (block.row_count(), 1), CellCategory.Label
       )
       index_block = self.next_block(
-        block, Direction.Top, (block.width(), 0), CellCategory.Label
+        block, Direction.Top, (-1, -1), (0, block.column_count()), CellCategory.Label
       )
   
       if not (label_block and index_block):
         continue
 
       title_block = self.next_block(
-        block, Direction.Top, (1,1),  CellCategory.Label
-      )                              
+        block, Direction.Top, (-1,-1), (0,0),  CellCategory.Any
+      )
+      if title_block.dimensions() == (1,1) and title_block.type_ == CellCategory.Label:
+        title = title_block.get_data(0,0)
+      else:
+        title_block = self.next_block(
+          block, Direction.Left, (-1,-1), (0,0), CellCategory.Any
+        )
+        if title_block.dimensions() == (1,1) and title_block.type_ == CellCategory.Label:
+          title = title_block.get_data(0,0)
+        else:
+          title = randomword(10)
+           
+      filename = slugify(title) + '.csv'
 
-      print('{0}; {1}; {2}'.format(title_block, label_block, index_block))
-  
-    #with open(filename, 'w', newline='') as f:
-    #  a = csv.writer(f, delimeter=',')
-    #  a.writerows([3,10])
+      os.chdir('tmp')
+      with open(filename, 'w', newline='') as f:
+        a = csv.writer(f)
 
+        index_data = []
+        rows, columns = index_block.dimensions()
+        for i in range(columns):
+          index_data.append(index_block.get_data(rows-1,i))
+
+        row_data = ['Index']
+        w,h = label_block.dimensions()
+        for i in range(w):
+          for j in range(h):
+            row_data.append(label_block.get_data(i,j))
+        a.writerow(row_data)
+
+        rows, columns = block.dimensions()
+        for i in range(columns):
+          row_data = [index_data[i]]
+          for j in range(rows):
+            row_data.append(block.get_data(j,i))
+          a.writerow(row_data)
+
+      os.chdir('..')
 
 
 class SheetModel(QStandardItemModel):
@@ -334,7 +417,7 @@ class SheetModel(QStandardItemModel):
           blacklist[sec] = k
 
         cat = self.data(self.index(i, sec[0]), CellData.Category)
-        yield Block((i, sec[0]), (k, sec[1]), cat)
+        yield Block(self, (i, sec[0]), (k, sec[1]), cat)
 
 
   def data(self, index, role):
