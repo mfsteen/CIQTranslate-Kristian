@@ -13,6 +13,8 @@ from PyQt5.QtCore import *
 import openpyxl
 from tokenizer import shunting_yard
 
+import collections
+
 import random
 import string
 
@@ -127,6 +129,29 @@ class CellCategory:
       self.Intermediate: 'Intermediate',
       self.Ignored: 'Ignored'
     }[category]
+
+  @classmethod
+  def color(self, category):
+    return {
+      self.Empty: QColor(255,255,255),
+      self.Label: QColor(200,200,200),
+      self.Input: QColor(255,255,200),
+      self.Output: QColor(200,255,200),
+      self.Intermediate: QColor(255,200,200),
+      self.Ignored: QColor(220,220,250)
+    }[category]
+
+  @classmethod
+  def categories(self):
+    return [
+      self.Empty,
+      self.Label,
+      self.Input,
+      self.Output,
+      self.Intermediate,
+      self.Ignored
+    ]
+
 
 class CellBorder:
   NoBorder = 0
@@ -489,6 +514,10 @@ class WorkbookModel:
   def current_sheet_model(self):
     return self.sheet_models[self.current_sheet_name]
 
+def intensify(qcolor):
+  hsv = qcolor.getHsv()
+  brightness = hsv[0] >= 0 and 255 or hsv[2]-100
+  return QColor.fromHsv(hsv[0], 255, brightness)
 
 class ItemDelegate(QStyledItemDelegate):
   def __init__(self, parent=None):
@@ -499,9 +528,10 @@ class ItemDelegate(QStyledItemDelegate):
 
     thickness = 3
 
-    color = index.data(Qt.BackgroundRole).getHsv()
-    brightness = color[0] >= 0 and 255 or 100
-    color = QColor.fromHsv(color[0], 255, brightness)
+#    color = index.data(Qt.BackgroundRole).getHsv()
+#    brightness = color[0] >= 0 and 255 or 100
+#    color = QColor.fromHsv(color[0], 255, brightness)
+    color = intensify(index.data(Qt.BackgroundRole))
 
     pen = QPen()
     pen.setColor(color)
@@ -613,6 +643,45 @@ class TableView(QTableView):
       self.hovered_cell = None
     return super(TableView, self).eventFilter(obj, event)
 
+
+class ColorLabel(QWidget):
+  def __init__(self, text, qcolor, parent=None):
+    super(ColorLabel, self).__init__(parent)
+    w, h = 20, 20
+    th = 2
+    pixmap = QPixmap(w, h)
+    pixmap.fill(qcolor)
+    p = QPainter(pixmap)
+    bcolor = intensify(qcolor)
+    p.setBrush(QBrush(bcolor))
+    p.setPen(QPen(bcolor))
+    p.drawRect(0,0,th,h)
+    p.drawRect(w-th-1,0,w,h)
+    p.drawRect(0,0,w,th)
+    p.drawRect(0,h-th-1,w,h)
+    del p
+    clabel = QLabel()
+    clabel.setPixmap(pixmap)
+    tlabel = QLabel(text)
+    hbox = QHBoxLayout()
+    hbox.addWidget(clabel)
+    hbox.addWidget(tlabel)
+    self.setLayout(hbox)
+
+class ColorLabels(QWidget):
+  def __init__(self, colordict, parent=None):
+    super(ColorLabels, self).__init__(parent)
+    hbox = QHBoxLayout()
+    for cd in colordict:
+      cl = ColorLabel(cd, colordict[cd])
+      hbox.addWidget(cl)
+
+    hbox.addSpacerItem(QSpacerItem(1,0,QSizePolicy.Expanding,QSizePolicy.Minimum))
+    hbox.setSpacing(0)
+    hbox.setContentsMargins(0,0,0,0)
+    self.setLayout(hbox)
+
+
 class MainWindow(QMainWindow):
   def __init__(self, parent=None):
     super(MainWindow, self).__init__(parent)
@@ -664,6 +733,13 @@ class MainWindow(QMainWindow):
 
     self.statusBar().addPermanentWidget(self.statusLabel, 2)
     self.statusBar().addPermanentWidget(self.cellinfoLabel, 1)
+
+    colordict = collections.OrderedDict()
+    for cat in CellCategory.categories():
+      colordict[CellCategory.desc(cat)] = CellCategory.color(cat)
+
+    colorLabels = ColorLabels(colordict)
+    vbox.addWidget(colorLabels)
 
     self.table = TableView()
     self.table.hovered_cell_changed[int,int].connect(self.update_cellinfo)
