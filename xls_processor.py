@@ -107,7 +107,8 @@ class CellData:
   Expression = Qt.UserRole+2
   Coordinate = Qt.UserRole+3
   Category = Qt.UserRole+4
-  Border = Qt.UserRole+5
+  SetCategory = Qt.UserRole+5
+  Border = Qt.UserRole+6
 
 class CellCategory:
   Empty = 0
@@ -327,6 +328,7 @@ class SheetModel(QStandardItemModel):
 
         item.setData(cell.value, CellData.Data)
         item.setData(CellBorder.NoBorder, CellData.Border)
+        item.setData(-1, CellData.SetCategory)
         item.setData(
           text and CellCategory.Label or CellCategory.Empty,
           CellData.Category
@@ -394,11 +396,18 @@ class SheetModel(QStandardItemModel):
     self.blocks.clear()
     [self.blocks.add_block(b) for b in self.scan_blocks()]
 
+  def reset_categories(self):
+    for col in range(self.columnCount()):
+      for row in range(self.rowCount()):
+        self.setData(self.index(row, col), -1, CellData.SetCategory)
+    self.update()
+
   def scan_blocks(self):
     def row_sections(row):
       start = 0
       for x in range(self.columnCount()):
-        cat = self.data(self.index(row, x), CellData.Category)
+        #cat = self.data(self.index(row, x), CellData.Category)
+        cat = self.get_category(self.index(row, x))
 
         x_next = x+1
 
@@ -407,7 +416,8 @@ class SheetModel(QStandardItemModel):
           continue
 
         if (x_next>self.columnCount()-1 or
-             self.data(self.index(row, x_next), CellData.Category) != cat):
+             #self.data(self.index(row, x_next), CellData.Category) != cat):
+             self.get_category(self.index(row, x_next)) != cat):
           yield (start, x)
           start = x_next
 
@@ -432,8 +442,10 @@ class SheetModel(QStandardItemModel):
           flag = False
           for m in all_rows[k+1]:
             if m==sec:
-              flag = self.index(k+1,m[0]).data(CellData.Category) == \
-                    self.index(i,sec[0]).data(CellData.Category)
+              flag = self.get_category(self.index(k+1, m[0])) == \
+                     self.get_category(self.index(i, sec[0]))
+#              flag = self.index(k+1,m[0]).data(CellData.Category) == \
+#                    self.index(i,sec[0]).data(CellData.Category)
               break
           if not flag:
             break
@@ -441,13 +453,20 @@ class SheetModel(QStandardItemModel):
           k += 1
           blacklist[sec] = k
 
-        cat = self.data(self.index(i, sec[0]), CellData.Category)
+        #cat = self.data(self.index(i, sec[0]), CellData.Category)
+        cat = self.get_category(self.index(i, sec[0]))
         yield Block(self, (i, sec[0]), (k, sec[1]), cat)
 
+  def get_category(self, index):
+    ret = self.data(index, CellData.SetCategory)
+    if ret == -1:
+      ret = self.data(index, CellData.Category)
+    return ret
 
   def data(self, index, role):
     if role == Qt.BackgroundRole:
-      category = self.data(index, CellData.Category)
+      category = self.get_category(index)
+
       if category == CellCategory.Input:
         return QColor(255,255,200)
       elif category == CellCategory.Intermediate:
@@ -601,7 +620,8 @@ class TableView(QTableView):
     indexes = selmodel.selection().indexes()
     if not indexes:
       return
-    cats = [ix.data(CellData.Category) for ix in indexes]
+    #cats = [ix.data(CellData.Category) for ix in indexes]
+    cats = [self.model().get_category(ix) for ix in indexes]
     for ac in self.menu.actions():
       if cats.count(cats[0]) == len(cats) and ac.data() == cats[0]:
         ac.setChecked(True)
@@ -619,7 +639,7 @@ class TableView(QTableView):
       return
     for ix in indexes:
       if ix.data(CellData.Category) != CellCategory.Empty:
-        self.model().setData(ix, qaction.data(), CellData.Category)
+        self.model().setData(ix, qaction.data(), CellData.SetCategory)
     self.model().update()
   
 
@@ -701,6 +721,10 @@ class MainWindow(QMainWindow):
     openFileAction.triggered.connect(self.open_file)
     toolbar.addAction(openFileAction)
 
+    resetAction = QAction(QIcon('pics/reset.png'), '&Reset categories', self)
+    resetAction.triggered.connect(self.reset_categories)
+    toolbar.addAction(resetAction)
+
     exportAction = QAction(QIcon('pics/export.png'), '&Export', self)
     exportAction.triggered.connect(self.export)
     toolbar.addAction(exportAction)
@@ -757,6 +781,9 @@ class MainWindow(QMainWindow):
     widget = QWidget()
     widget.setLayout(vbox)
     self.setCentralWidget(widget)
+ 
+  def reset_categories(self):
+    self.workbook_model.current_sheet_model().reset_categories()
 
   def export(self):
     self.table.model().blocks.export('out.hd5')
@@ -770,7 +797,9 @@ class MainWindow(QMainWindow):
     if -1 in [row, column]:
       return
 
-    category = self.table.model().index(row,column).data(CellData.Category)
+    #category = self.table.model().index(row,column).data(CellData.Category)
+    model = self.table.model()
+    category = model.get_category(model.index(row,column))
     text = '({0},{1})'.format(row+1, column+1)
     if category and category != CellCategory.Empty:
       text += ' {0}'.format(CellCategory.desc(category))
