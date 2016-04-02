@@ -721,13 +721,29 @@ class MainWindow(QMainWindow):
     openFileAction.triggered.connect(self.open_file)
     toolbar.addAction(openFileAction)
 
-    resetAction = QAction(QIcon('pics/reset.png'), '&Reset categories', self)
-    resetAction.triggered.connect(self.reset_categories)
-    toolbar.addAction(resetAction)
-
     exportAction = QAction(QIcon('pics/export.png'), '&Export', self)
     exportAction.triggered.connect(self.export)
     toolbar.addAction(exportAction)
+
+    toolbar.addSeparator()
+
+    ag = QActionGroup(toolbar)
+    ag.triggered[QAction].connect(self.mode_changed)
+    categoriesAction = QAction(QIcon('pics/categories.png'), 'Category Manipulator', ag)
+    categoriesAction.setCheckable(True)
+    categoriesAction.setChecked(True)
+    toolbar.addAction(categoriesAction)
+
+#    otherAction = QAction(QIcon('pics/other.png'), 'Other', ag)
+#    otherAction.setCheckable(True)
+#    toolbar.addAction(otherAction)
+
+    self.addToolBarBreak()
+    toolbar2 = self.addToolBar('toolbar2')
+    toolbar2.setMovable(False)
+    resetAction = QAction(QIcon('pics/reset.png'), '&Reset categories', self)
+    resetAction.triggered.connect(self.reset_categories)
+    toolbar2.addAction(resetAction)
 
    # toolbar.addSeparator()
 
@@ -781,6 +797,9 @@ class MainWindow(QMainWindow):
     widget = QWidget()
     widget.setLayout(vbox)
     self.setCentralWidget(widget)
+
+  def mode_changed(self, qaction):
+    print(qaction)
  
   def reset_categories(self):
     self.workbook_model.current_sheet_model().reset_categories()
