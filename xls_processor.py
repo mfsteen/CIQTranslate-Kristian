@@ -638,8 +638,8 @@ class TableView(QTableView):
     if not indexes:
       return
     for ix in indexes:
-      if ix.data(CellData.Category) != CellCategory.Empty:
-        self.model().setData(ix, qaction.data(), CellData.SetCategory)
+      #if ix.data(CellData.Category) != CellCategory.Empty:
+      self.model().setData(ix, qaction.data(), CellData.SetCategory)
     self.model().update()
   
 
@@ -663,44 +663,165 @@ class TableView(QTableView):
       self.hovered_cell = None
     return super(TableView, self).eventFilter(obj, event)
 
+  def do(self, what):
+    model = self.model()
 
-class ColorLabel(QWidget):
-  def __init__(self, text, qcolor, parent=None):
-    super(ColorLabel, self).__init__(parent)
-    w, h = 20, 20
-    th = 2
-    pixmap = QPixmap(w, h)
-    pixmap.fill(qcolor)
-    p = QPainter(pixmap)
-    bcolor = intensify(qcolor)
-    p.setBrush(QBrush(bcolor))
-    p.setPen(QPen(bcolor))
-    p.drawRect(0,0,th,h)
-    p.drawRect(w-th-1,0,w,h)
-    p.drawRect(0,0,w,th)
-    p.drawRect(0,h-th-1,w,h)
-    del p
-    clabel = QLabel()
-    clabel.setPixmap(pixmap)
-    tlabel = QLabel(text)
-    hbox = QHBoxLayout()
-    hbox.addWidget(clabel)
-    hbox.addWidget(tlabel)
-    self.setLayout(hbox)
+    selmodel = self.selectionModel()
+    if not selmodel:
+      return
+    indexes = selmodel.selection().indexes()
+    if not indexes:
+      return
 
-class ColorLabels(QWidget):
-  def __init__(self, colordict, parent=None):
-    super(ColorLabels, self).__init__(parent)
-    hbox = QHBoxLayout()
-    for cd in colordict:
-      cl = ColorLabel(cd, colordict[cd])
-      hbox.addWidget(cl)
+    x,y = indexes[0].column(), indexes[0].row()
+    xmin,xmax,ymin,ymax = x,x,y,y
+    for ix in indexes:
+      xmin = min(xmin, ix.column())
+      xmax = max(xmax, ix.column())
+      ymin = min(ymin, ix.row())
+      ymax = max(ymax, ix.row())
+    rows = ymax - ymin + 1
+    columns = xmax - xmin + 1
 
-    hbox.addSpacerItem(QSpacerItem(1,0,QSizePolicy.Expanding,QSizePolicy.Minimum))
-    hbox.setSpacing(0)
-    hbox.setContentsMargins(0,0,0,0)
-    self.setLayout(hbox)
+    #print('{0} {1} {2} {3}'.format(xmin, xmax, ymin, ymax))
+#      #if ix.data(CellData.Category) != CellCategory.Empty:
+#      self.table.model().setData(ix, qaction.data(), CellData.SetCategory)
+#    self.table.model().update()
 
+    if what == 'merge row-wise':
+      pass
+    elif what == 'merge column-wise':
+      pass
+    elif what == 'add row':
+      if rows == 1:
+        self.model().insertRow(y+1)
+    elif what == 'add column':
+      pass
+    elif what == 'delete row':
+      for i in range(ymin, ymax+1):
+        self.model().takeRow(i)
+    elif what == 'delete column':
+      pass
+
+class MyToolBar(QToolBar):
+  def __init__(self, parent=None):
+    super(MyToolBar, self).__init__(parent)
+    self.setMovable(False)
+
+  def add_action(self, data, pic, label, parent, func=None, shortcut=None, checkable=False, checked=False):
+    a = QAction(QIcon('pics/'+pic), label, parent)
+
+    a.setData(data)
+
+    if shortcut:
+      a.setShortcut(shortcut)
+
+    if checkable:
+      a.setCheckable(True)
+      a.setChecked(checked)
+
+    if func:
+      a.triggered.connect(func)
+
+    self.addAction(a)
+
+  def add_group(self, parent, func=None):
+    ag = QActionGroup(parent)
+
+    if func:
+      ag.triggered[QAction].connect(func)
+
+    return ag
+
+  def add_stretch(self):
+    w = QWidget()
+    w.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+    self.addWidget(w)
+
+class MainToolBar(MyToolBar):
+  def __init__(self, parent=None):
+    super(MainToolBar, self).__init__(parent)
+
+    self.add_action('open', 'open.png', '&Open File', parent, parent.open_file, 'Ctrl-O')
+
+    self.addSeparator()
+
+    ag = self.add_group(self, parent.mode_changed)
+    self.add_action('categories', 'categories.png', 'Category Manipulator', ag, checkable=True, checked=True)
+    self.add_action('table', 'table.png', 'Table Manipulators', ag, checkable=True)
+    self.add_action('hdf5', 'hdf5.png', 'HDF5 Preview', ag, checkable=True)
+
+    self.add_stretch()
+
+    self.add_action('exit', 'exit.png', 'E&xit', parent, qApp.quit, 'Ctrl-Q')
+
+class CategoryToolBar:
+  def __init__(self, toolbar):
+    self.toolbar = toolbar
+
+    self.t2 = MyToolBar()
+    self.t2.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+
+    self.toolbar.add_action('reset', 'reset.png', '&Reset categories', toolbar.parent,
+        toolbar.parent.reset_categories)
+
+    toolbar.parent.addToolBar(self.t2)
+    ag = self.t2.add_group(toolbar.parent, toolbar.parent.set_category)
+
+    self.t2.add_action(CellCategory.Empty, 'category_white.png', 'Empty', ag)
+    self.t2.add_action(CellCategory.Label, 'category_grey.png', 'Label', ag)
+    self.t2.add_action(CellCategory.Input, 'category_yellow.png', 'Input', ag)
+    self.t2.add_action(CellCategory.Output, 'category_green.png', 'Output', ag)
+    self.t2.add_action(CellCategory.Intermediate, 'category_red.png', 'Intermediate', ag)
+    self.t2.add_action(CellCategory.Ignored, 'category_blue.png', 'Ignored', ag)
+
+  def __del__(self):
+    self.toolbar.parent.removeToolBar(self.t2)
+    self.toolbar.clear()
+
+class TableToolBar:
+  def __init__(self, toolbar):
+    self.toolbar = toolbar
+    
+    ag = toolbar.add_group(toolbar.parent, toolbar.parent.table_action)
+    toolbar.add_action('merge row-wise', 'merge1.png', 'Merge selected contents row-wise', ag)
+    toolbar.add_action('merge column-wise', 'merge2.png', 'Merge selected contents column-wise', ag)
+    toolbar.add_action('add row', 'add_row.png', 'Add row', ag)
+    toolbar.add_action('add column', 'add_column.png', 'Add column', ag)
+    toolbar.add_action('delete row', 'delete_row.png', 'Delete row', ag)
+    toolbar.add_action('delete column', 'delete_column.png', 'Delete column', ag)
+
+  def __del__(self):
+    self.toolbar.clear()
+
+class HDF5ToolBar:
+  def __init__(self, toolbar):
+    self.toolbar = toolbar
+    toolbar.add_action('export', 'export.png', '&Export', toolbar.parent, toolbar.parent.export)
+
+  def __del__(self):
+    self.toolbar.clear()
+
+class SubToolBar(MyToolBar):
+  def __init__(self, parent=None):
+    super(SubToolBar, self).__init__(parent)
+    self.parent = parent
+
+  def load(self, what):
+    try:
+      del self.toolbar
+    except AttributeError:
+      pass
+
+    if what == 'categories':
+      self.toolbar = CategoryToolBar(self)
+    elif what == 'table':
+      self.toolbar = TableToolBar(self)
+    elif what == 'hdf5':
+     self.toolbar = HDF5ToolBar(self)
+
+  def update(self):
+    pass
 
 class MainWindow(QMainWindow):
   def __init__(self, parent=None):
@@ -713,59 +834,24 @@ class MainWindow(QMainWindow):
   def setupUI(self):
     vbox = QVBoxLayout()
 
-    toolbar = self.addToolBar('toolbar')
-    toolbar.setMovable(False)
-
-    openFileAction = QAction(QIcon('pics/open.png'), '&Open File', self)
-    openFileAction.setShortcut('Ctrl+O')
-    openFileAction.triggered.connect(self.open_file)
-    toolbar.addAction(openFileAction)
-
-    exportAction = QAction(QIcon('pics/export.png'), '&Export', self)
-    exportAction.triggered.connect(self.export)
-    toolbar.addAction(exportAction)
-
-    toolbar.addSeparator()
-
-    ag = QActionGroup(toolbar)
-    ag.triggered[QAction].connect(self.mode_changed)
-    categoriesAction = QAction(QIcon('pics/categories.png'), 'Category Manipulator', ag)
-    categoriesAction.setCheckable(True)
-    categoriesAction.setChecked(True)
-    toolbar.addAction(categoriesAction)
-
-#    otherAction = QAction(QIcon('pics/other.png'), 'Other', ag)
-#    otherAction.setCheckable(True)
-#    toolbar.addAction(otherAction)
-
+    self.addToolBar(MainToolBar(self))
     self.addToolBarBreak()
-    toolbar2 = self.addToolBar('toolbar2')
-    toolbar2.setMovable(False)
-    resetAction = QAction(QIcon('pics/reset.png'), '&Reset categories', self)
-    resetAction.triggered.connect(self.reset_categories)
-    toolbar2.addAction(resetAction)
+    self.subtoolbar = SubToolBar(self)
+    self.addToolBar(self.subtoolbar)
+    self.subtoolbar.load('categories')
 
-   # toolbar.addSeparator()
+    #toolbar2 = self.addToolBar('toolbar2')
+    #toolbar2.setMovable(False)
+    #resetAction = QAction(QIcon('pics/reset.png'), '&Reset categories', self)
+    #resetAction.triggered.connect(self.reset_categories)
+    #toolbar2.addAction(resetAction)
 
-   # pushmodeAction = QAction(QIcon('pics/push2.png'), 'P&ush Mode', self)
-   # toolbar.addAction(pushmodeAction)
-
-    stretchWidget = QWidget()
-    stretchWidget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
-
-    toolbar.addWidget(stretchWidget)
-
-    exitAction = QAction(QIcon('pics/exit.png'), 'E&xit', self)
-    exitAction.setShortcut('Ctrl+Q')
-    exitAction.triggered.connect(qApp.quit)
-    toolbar.addAction(exitAction)
-
-    menubar = self.menuBar()
-    fileMenu = menubar.addMenu('&File')
-    fileMenu.addAction(openFileAction)
-    fileMenu.addAction(exportAction)
-    fileMenu.addSeparator()
-    fileMenu.addAction(exitAction)
+    #menubar = self.menuBar()
+    #fileMenu = menubar.addMenu('&File')
+    #fileMenu.addAction(openFileAction)
+    #fileMenu.addAction(exportAction)
+    #fileMenu.addSeparator()
+    #fileMenu.addAction(exitAction)
 
     self.statusLabel, self.cellinfoLabel = QLabel(), QLabel()
     self.statusLabel.setFrameStyle(QFrame.Panel | QFrame.Sunken)
@@ -777,9 +863,6 @@ class MainWindow(QMainWindow):
     colordict = collections.OrderedDict()
     for cat in CellCategory.categories():
       colordict[CellCategory.desc(cat)] = CellCategory.color(cat)
-
-    colorLabels = ColorLabels(colordict)
-    vbox.addWidget(colorLabels)
 
     self.table = TableView()
     self.table.hovered_cell_changed[int,int].connect(self.update_cellinfo)
@@ -799,10 +882,25 @@ class MainWindow(QMainWindow):
     self.setCentralWidget(widget)
 
   def mode_changed(self, qaction):
-    print(qaction)
+    self.subtoolbar.load(qaction.data())
  
   def reset_categories(self):
     self.workbook_model.current_sheet_model().reset_categories()
+
+  def set_category(self, qaction):
+    selmodel = self.table.selectionModel()
+    if not selmodel:
+      return
+    indexes = selmodel.selection().indexes()
+    if not indexes:
+      return
+    for ix in indexes:
+      #if ix.data(CellData.Category) != CellCategory.Empty:
+      self.table.model().setData(ix, qaction.data(), CellData.SetCategory)
+    self.table.model().update()
+
+  def table_action(self, qaction):
+    self.table.do(qaction.data())
 
   def export(self):
     self.table.model().blocks.export('out.hd5')
